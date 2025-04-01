@@ -92,10 +92,7 @@ export default function AvatarUploader({ user, displayName, refreshProfile }) {
 </DropdownMenu>
 
 
-      <div>
-        <p className="font-medium text-lg">Привет, {displayName || "друг"}!</p>
-        <p className="text-sm text-muted-foreground">Твоя кожа будет идеальной</p>
-      </div>
+     
 
       <input
   type="file"

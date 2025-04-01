@@ -36,6 +36,9 @@ const INGREDIENT_INFO = {
 };
 
 export default function MyProductsTab({ user }) {
+  const [showSavedMessage, setShowSavedMessage] = useState(false);
+  const [showAddedMessage, setShowAddedMessage] = useState(false);
+  const [showDeletedMessage, setShowDeletedMessage] = useState(false);
   const [products, setProducts] = useState([]);
   const [selected, setSelected] = useState(null);
   const [open, setOpen] = useState(false);
@@ -73,6 +76,7 @@ export default function MyProductsTab({ user }) {
   const handleAdd = async () => {
     const { name, description, time_of_use, category, ingredients } = newProduct;
     const parsedIngredients = ingredients.split(",").map(i => i.trim());
+  
     const { error } = await supabase.from("products").insert({
       user_id: user.id,
       name,
@@ -82,12 +86,23 @@ export default function MyProductsTab({ user }) {
       ingredients: parsedIngredients,
       in_routine: true
     });
+  
     if (!error) {
-      setAddOpen(false);
-      setNewProduct({ name: "", description: "", time_of_use: "", category: "", ingredients: "" });
+      setAddOpen(false); // Закрываем окно
+      setNewProduct({ // Сбрасываем поля
+        name: "",
+        description: "",
+        time_of_use: "",
+        category: "",
+        ingredients: ""
+      });
+      setSelected(null);
       fetchProducts();
+      setShowAddedMessage(true);
+      setTimeout(() => setShowAddedMessage(false), 2000);
     }
   };
+  
 
   const handleEdit = async () => {
     const { id } = selected;
@@ -104,8 +119,13 @@ export default function MyProductsTab({ user }) {
       setEditOpen(false);
       setSelected(null);
       fetchProducts();
+  
+      // Показываем уведомление
+      setShowSavedMessage(true);
+      setTimeout(() => setShowSavedMessage(false), 2000);
     }
   };
+  
 
   const handleDelete = async () => {
     const { id } = selected;
@@ -115,8 +135,11 @@ export default function MyProductsTab({ user }) {
       setOpen(false);
       setSelected(null);
       fetchProducts();
+      setShowDeletedMessage(true);
+      setTimeout(() => setShowDeletedMessage(false), 2000);
     }
   };
+  
 
   return (
     <div className="space-y-4">
@@ -131,147 +154,235 @@ export default function MyProductsTab({ user }) {
         <p className="text-sm text-muted-foreground">Нет добавленных средств</p>
       ) : (
         <div className="grid gap-4">
-          {products.map((product) => (
-            <Card key={product.id} className="relative">
-            <CardContent
-              className="p-4 cursor-pointer"
-              onClick={(e) => {
-                if (e.target.closest("button")) return; // предотвращаем открытие по кнопке
-                openProduct(product);
-              }}
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-semibold text-base mb-1">{product.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {product.category} • {product.time_of_use}
-                  </p>
-                </div>
-          
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={(e) => e.stopPropagation()} // обязательно!
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation();
-                      setNewProduct(product);
-                      setEditOpen(true);
-                    }}>
-                      Изменить
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-500"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelected(product);
-                        setConfirmDelete(true);
-                      }}
-                    >
-                      Удалить
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardContent>
-          </Card>
-          ))}
+  {products.map((product) => (
+    <Card
+      key={product.id}
+      className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-[1.01]"
+    >
+      <CardContent
+        className="p-4 cursor-pointer"
+        onClick={(e) => {
+          if (e.target.closest("button")) return;
+          openProduct(product);
+        }}
+      >
+        <div className="flex justify-between items-start">
+          <div className="space-y-1">
+            <p className="font-semibold text-base text-gray-900">{product.name}</p>
+            <p className="text-xs text-gray-500">
+              {product.category} • {product.time_of_use}
+            </p>
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="hover:bg-gray-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelected(product);
+setNewProduct({
+  ...product,
+  ingredients: Array.isArray(product.ingredients)
+    ? product.ingredients.join(", ")
+    : product.ingredients,
+});
+setEditOpen(true);
+                }}
+              >
+                Изменить
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-red-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelected(product);
+                  setConfirmDelete(true);
+                }}
+              >
+                Удалить
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+      </CardContent>
+    </Card>
+  ))}
+</div>
+
       )}
 
-      {/* Просмотр */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          {selected && (
-            <div className="space-y-3">
-              <DialogTitle>{selected.name}</DialogTitle>
-              <DialogDescription>{selected.description}</DialogDescription>
-              <div>
-                <p className="font-semibold text-sm mb-1">Активные компоненты:</p>
-                <ul className="list-disc list-inside space-y-1 text-sm">
-                  {selected.ingredients.map((item, i) => (
-                    <li key={i}>
-                      <strong>{item}:</strong> {INGREDIENT_INFO[item.toLowerCase()] || "Нет описания"}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => window.open(`https://www.ozon.ru/search/?text=${encodeURIComponent(selected.name)}`, "_blank")}
-              >
-                Заказать на Ozon
-              </Button>
-            </div>
-          )}
-        </DialogContent>
+      <DialogContent className="max-w-md rounded-2xl shadow-lg">
+  {selected && (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <h3 className="text-2xl font-semibold text-gray-900">{selected.name}</h3>
+        <p className="text-sm text-gray-600">{selected.description}</p>
+      </div>
+
+      <div>
+        <h4 className="text-sm font-medium text-gray-700 mb-2">💡 Активные компоненты</h4>
+        <ul className="list-disc list-inside space-y-1 text-sm text-gray-800">
+          {selected.ingredients.map((item, i) => (
+            <li key={i}>
+              <strong>{item}:</strong>{" "}
+              {INGREDIENT_INFO[item.toLowerCase()] || "Нет описания"}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <Button
+        className="w-full py-2 rounded-xl bg-black text-white hover:bg-gray-800 transition-all"
+        onClick={() =>
+          window.open(
+            `https://www.ozon.ru/search/?text=${encodeURIComponent(selected.name)}`,
+            "_blank"
+          )
+        }
+      >
+        Заказать на Ozon
+      </Button>
+    </div>
+  )}
+</DialogContent>
+
       </Dialog>
 
       {/* Добавление */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
-          <DialogTitle>Добавить средство</DialogTitle>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Название</Label>
-              <Input value={newProduct.name} onChange={(e) => setNewProduct(p => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Описание</Label>
-              <Input value={newProduct.description} onChange={(e) => setNewProduct(p => ({ ...p, description: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Категория</Label>
-              <Input value={newProduct.category} onChange={(e) => setNewProduct(p => ({ ...p, category: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Время использования</Label>
-              <Input value={newProduct.time_of_use} onChange={(e) => setNewProduct(p => ({ ...p, time_of_use: e.target.value }))} placeholder="утро / вечер / оба" />
-            </div>
-            <div className="space-y-1">
-              <Label>Компоненты (через запятую)</Label>
-              <Input value={newProduct.ingredients} onChange={(e) => setNewProduct(p => ({ ...p, ingredients: e.target.value }))} />
-            </div>
-            <Button onClick={handleAdd}>Добавить</Button>
-          </div>
-        </DialogContent>
+      <DialogContent className="max-w-md rounded-2xl">
+  <DialogTitle className="text-xl font-semibold text-gray-900">Добавить средство</DialogTitle>
+  <div className="space-y-4 pt-2">
+    <div className="space-y-1">
+      <Label className="text-sm text-gray-700">Название</Label>
+      <Input
+        className="rounded-xl"
+        value={newProduct.name}
+        onChange={(e) => setNewProduct(p => ({ ...p, name: e.target.value }))}
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-sm text-gray-700">Описание</Label>
+      <Input
+        className="rounded-xl"
+        value={newProduct.description}
+        onChange={(e) => setNewProduct(p => ({ ...p, description: e.target.value }))}
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-sm text-gray-700">Категория</Label>
+      <Input
+        className="rounded-xl"
+        value={newProduct.category}
+        onChange={(e) => setNewProduct(p => ({ ...p, category: e.target.value }))}
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-sm text-gray-700">Время использования</Label>
+      <Input
+        className="rounded-xl"
+        placeholder="утро / вечер / оба"
+        value={newProduct.time_of_use}
+        onChange={(e) => setNewProduct(p => ({ ...p, time_of_use: e.target.value }))}
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-sm text-gray-700">Компоненты (через запятую)</Label>
+      <Input
+        className="rounded-xl"
+        value={newProduct.ingredients}
+        onChange={(e) => setNewProduct(p => ({ ...p, ingredients: e.target.value }))}
+      />
+    </div>
+    <Button
+      onClick={handleAdd}
+      className="w-full py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all"
+    >
+      Добавить
+    </Button>
+  </div>
+</DialogContent>
+
       </Dialog>
 
       {/* Редактирование */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogTitle>Редактировать средство</DialogTitle>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Название</Label>
-              <Input value={newProduct.name} onChange={(e) => setNewProduct(p => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Описание</Label>
-              <Input value={newProduct.description} onChange={(e) => setNewProduct(p => ({ ...p, description: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Категория</Label>
-              <Input value={newProduct.category} onChange={(e) => setNewProduct(p => ({ ...p, category: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Время использования</Label>
-              <Input value={newProduct.time_of_use} onChange={(e) => setNewProduct(p => ({ ...p, time_of_use: e.target.value }))} placeholder="утро / вечер / оба" />
-            </div>
-            <div className="space-y-1">
-              <Label>Компоненты (через запятую)</Label>
-              <Input value={newProduct.ingredients} onChange={(e) => setNewProduct(p => ({ ...p, ingredients: e.target.value }))} />
-            </div>
-            <Button onClick={handleEdit}>Сохранить</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+  <DialogContent className="max-w-md rounded-2xl">
+    <DialogTitle className="text-xl font-semibold text-gray-900">Редактировать средство</DialogTitle>
+    <div className="space-y-4 pt-2">
+      <div className="space-y-1">
+        <Label className="text-sm text-gray-700">Название</Label>
+        <Input
+          className="rounded-xl"
+          value={newProduct.name}
+          onChange={(e) =>
+            setNewProduct((p) => ({ ...p, name: e.target.value }))
+          }
+        />
+        
+      </div>
+      <div className="space-y-1">
+        <Label className="text-sm text-gray-700">Описание</Label>
+        <Input
+          className="rounded-xl"
+          value={newProduct.description}
+          onChange={(e) =>
+            setNewProduct((p) => ({ ...p, description: e.target.value }))
+          }
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-sm text-gray-700">Категория</Label>
+        <Input
+          className="rounded-xl"
+          value={newProduct.category}
+          onChange={(e) =>
+            setNewProduct((p) => ({ ...p, category: e.target.value }))
+          }
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-sm text-gray-700">Время использования</Label>
+        <Input
+          className="rounded-xl"
+          placeholder="утро / вечер / оба"
+          value={newProduct.time_of_use}
+          onChange={(e) =>
+            setNewProduct((p) => ({ ...p, time_of_use: e.target.value }))
+          }
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-sm text-gray-700">Компоненты (через запятую)</Label>
+        <Input
+          className="rounded-xl"
+          value={newProduct.ingredients}
+          onChange={(e) =>
+            setNewProduct((p) => ({ ...p, ingredients: e.target.value }))
+          }
+        />
+      </div>
+      <Button
+        onClick={handleEdit}
+        className="w-full py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all"
+      >
+        Сохранить
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+
 
       {/* Подтверждение удаления */}
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
@@ -286,6 +397,23 @@ export default function MyProductsTab({ user }) {
           </div>
         </DialogContent>
       </Dialog>
+      {showSavedMessage && (
+  <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-green-100 text-green-800 px-4 py-2 rounded-xl shadow-md text-sm font-medium flex items-center gap-2 z-50">
+    ✅ Изменения сохранены
+  </div>
+)}
+
+{showAddedMessage && (
+  <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-xl shadow-md text-sm font-medium flex items-center gap-2 z-50">
+    ➕ Средство добавлено
+  </div>
+)}
+
+{showDeletedMessage && (
+  <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 px-4 py-2 rounded-xl shadow-md text-sm font-medium flex items-center gap-2 z-50">
+    🗑 Средство удалено
+  </div>
+)}
     </div>
   );
 }

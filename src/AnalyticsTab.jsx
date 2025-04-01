@@ -41,27 +41,72 @@ export default function AnalyticsTab({ user }) {
   const totalDone = progress.filter(p => p.morning_done && p.evening_done).length;
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <Button variant="outline" onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}>←</Button>
-        <h2 className="text-xl font-semibold">{format(currentMonth, "LLLL yyyy")}</h2>
-        <Button variant="outline" onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}>→</Button>
+    <div className="space-y-6">
+      {/* Навигация по месяцам */}
+      <div className="flex items-center justify-between">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
+          className="rounded-full"
+        >
+          ←
+        </Button>
+        <h2 className="text-xl font-semibold text-gray-900">
+          {format(currentMonth, "LLLL yyyy")}
+        </h2>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
+          className="rounded-full"
+        >
+          →
+        </Button>
       </div>
-
+  
+      {/* Календарь */}
       <div className="grid grid-cols-7 gap-2">
-        {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map(day => (
-          <div key={day} className="text-sm text-center font-medium">{day}</div>
-        ))}
-        {days.map((day, i) => (
-          <div key={i} className={`h-10 flex items-center justify-center text-sm rounded ${getDayStatus(day)}`}>
-            {format(day, "d")}
+        {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day) => (
+          <div key={day} className="text-xs text-center text-gray-500">
+            {day}
           </div>
         ))}
+  
+        {days.map((day, i) => {
+          const dayStr = format(day, "yyyy-MM-dd");
+          const entry = progress.find((d) => d.date === dayStr);
+          const isCurrentMonth = isSameMonth(day, currentMonth);
+  
+          const bgColor = entry?.morning_done && entry?.evening_done
+            ? "bg-green-100 text-green-800"
+            : "bg-red-100 text-red-800";
+  
+          return (
+            <div
+              key={i}
+              className={`h-10 flex items-center justify-center text-sm font-medium rounded-full ${
+                isCurrentMonth ? bgColor : "text-gray-300"
+              }`}
+            >
+              {format(day, "d")}
+            </div>
+          );
+        })}
       </div>
-
-      <p className="text-sm">Дней использования: {daysSinceStart}</p>
-      <p className="text-sm">Выполненных дней: {fullyCompletedDays}</p>
+  
+      {/* Статистика */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-gray-100 rounded-xl p-4 text-center">
+          <p className="text-xs text-gray-500 mb-1">Дней использования</p>
+          <p className="text-lg font-semibold text-gray-900">{daysSinceStart}</p>
+        </div>
+        <div className="bg-gray-100 rounded-xl p-4 text-center">
+          <p className="text-xs text-gray-500 mb-1">Полностью выполнено в этом месяце</p>
+          <p className="text-lg font-semibold text-gray-900">{fullyCompletedDays}</p>
+        </div>
       </div>
-   
+    </div>
   );
+  
 }

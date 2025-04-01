@@ -41,12 +41,12 @@ export default function Auth({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-sm">
-        <h2 className="text-2xl font-semibold mb-4 text-center">Вход</h2>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="bg-white p-6 rounded-2xl shadow-md w-full max-w-sm space-y-6">
+        <h2 className="text-2xl font-semibold text-center text-gray-900">Вход</h2>
 
         {errorMsg && (
-          <div className="text-red-600 text-sm mb-3 text-center">{errorMsg}</div>
+          <div className="text-red-600 text-sm text-center">{errorMsg}</div>
         )}
 
         {!showReset ? (
@@ -56,20 +56,23 @@ export default function Auth({ onLogin }) {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full mb-3 p-2 border rounded"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-black"
             />
             <input
               type="password"
               placeholder="Пароль"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full mb-4 p-2 border rounded"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-black"
             />
-            <Button className="w-full mb-2" onClick={handleLogin}>
+            <Button
+              className="w-full rounded-xl bg-black text-white hover:bg-gray-800"
+              onClick={handleLogin}
+            >
               Войти
             </Button>
             <button
-              className="text-sm text-blue-600 hover:underline w-full text-center"
+              className="w-full text-sm text-blue-600 hover:underline text-center"
               onClick={() => setShowReset(true)}
             >
               Забыли пароль?
@@ -77,19 +80,24 @@ export default function Auth({ onLogin }) {
           </>
         ) : (
           <>
-            <p className="text-sm mb-2 text-gray-700">Введите email для сброса пароля:</p>
+            <p className="text-sm text-gray-700 text-center">
+              Введите email для сброса пароля:
+            </p>
             <input
               type="email"
               placeholder="Ваш email"
               value={resetEmail}
               onChange={(e) => setResetEmail(e.target.value)}
-              className="w-full mb-3 p-2 border rounded"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-black"
             />
-            <Button className="w-full mb-2" onClick={handlePasswordReset}>
+            <Button
+              className="w-full rounded-xl bg-black text-white hover:bg-gray-800"
+              onClick={handlePasswordReset}
+            >
               Отправить ссылку
             </Button>
             <button
-              className="text-sm text-gray-600 hover:underline w-full text-center"
+              className="w-full text-sm text-gray-600 hover:underline text-center"
               onClick={() => {
                 setShowReset(false);
                 setErrorMsg("");
