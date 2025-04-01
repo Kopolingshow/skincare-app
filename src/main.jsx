@@ -9,19 +9,21 @@ function ResetPassword() {
   const [password, setPassword] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
-
-  const url = new URL(window.location.href);
-  const access_token = url.hash.match(/access_token=([^&]+)/)?.[1];
-  const refresh_token = url.hash.match(/refresh_token=([^&]+)/)?.[1];
+  const [validReset, setValidReset] = useState(false);
 
   useEffect(() => {
+    const hash = window.location.hash;
+    const access_token = hash.match(/access_token=([^&]+)/)?.[1];
+    const refresh_token = hash.match(/refresh_token=([^&]+)/)?.[1];
+
     if (access_token && refresh_token) {
+      setValidReset(true);
       supabase.auth.setSession({
         access_token,
         refresh_token,
       });
     }
-  }, [access_token, refresh_token]);
+  }, []);
 
   const handleChange = async () => {
     const { error } = await supabase.auth.updateUser({ password });
@@ -29,14 +31,25 @@ function ResetPassword() {
       setError(error.message);
     } else {
       setConfirmed(true);
+      localStorage.removeItem("isRecovery");
     }
   };
+
+  if (!validReset) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <p className="text-red-600 text-center text-lg">
+          Ссылка для сброса недействительна или устарела.
+        </p>
+      </div>
+    );
+  }
 
   if (confirmed) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <p className="text-green-600 text-center text-lg">
-          ✅ Пароль успешно изменён! Теперь вы можете войти.
+          ✅ Пароль успешно изменён. Теперь вы можете войти.
         </p>
       </div>
     );
@@ -72,9 +85,8 @@ function AppWrapper() {
   useEffect(() => {
     const hash = window.location.hash;
     const type = hash.match(/type=([^&]+)/)?.[1];
-
     if (type === "recovery") {
-      setIsReset(true);
+      localStorage.setItem("isRecovery", "true");
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -90,10 +102,16 @@ function AppWrapper() {
     };
   }, []);
 
+  useEffect(() => {
+    const isRecovery = localStorage.getItem("isRecovery") === "true";
+    if (isRecovery) {
+      setIsReset(true);
+    }
+  }, []);
+
   if (isReset) return <ResetPassword />;
   return session ? <SkincareApp session={session} /> : <Auth onLogin={setSession} />;
 }
-
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
