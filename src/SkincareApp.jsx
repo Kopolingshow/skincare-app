@@ -16,17 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import PullToRefresh from "react-pull-to-refresh";
-import OneSignalInit from "./components/OneSignalInit"; // путь может отличаться
 
-function App() {
-  return (
-    <>
-      <OneSignalInit />
-      {/* остальное содержимое */}
-    </>
-  );
-}
 
 
 
@@ -99,7 +89,6 @@ useEffect(() => {
 
   if (user) loadProfile();
 }, [user]);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [morningChecklist, setMorningChecklist] = useState({});
   const [eveningChecklist, setEveningChecklist] = useState({});
   const [morningCompleted, setMorningCompleted] = useState(false);
@@ -197,11 +186,16 @@ useEffect(() => {
   if (!user) return <div>Загрузка...</div>;
 
   return (
-    <PullToRefresh onRefresh={() => window.location.reload()}>
-      <div className="max-w-xl mx-auto p-4">
-      <h1 className="text-3xl font-serif text-center text-[#d48c72] mb-2">
-        Персональный уход за кожей
-      </h1>
+    <div className="bg-background min-h-screen overflow-y-auto">
+    <div className="max-w-xl mx-auto p-4">
+      <div className="flex justify-end mb-2">
+        <Button size="sm" variant="ghost" onClick={() => window.location.reload()}>
+          🔄 Обновить
+        </Button>
+      </div>
+          <h1 className="text-3xl font-serif text-center text-[#d48c72] mb-2">
+            Персональный уход за кожей
+          </h1>
       
       {user && (
   <div className="flex items-center justify-between mb-4">
@@ -261,24 +255,8 @@ useEffect(() => {
           <Switch checked={tripMode} onCheckedChange={setTripMode} />
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">Уведомления</span>
-            <Switch
-  
-  checked={notificationsEnabled}
-  onCheckedChange={(checked) => {
-    console.log("Включение уведомлений:", checked);
-    setNotificationsEnabled(checked);
-    if (checked && window.askOneSignalPermission) {
-      window.askOneSignalPermission();
-    }
-  }}
-
-/>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => supabase.auth.signOut()}>
-            Выйти
-          </Button>
+        
+         
         </div>
       </div>
 
@@ -296,9 +274,6 @@ useEffect(() => {
 <TabsContent value="analytics">
   <AnalyticsTab user={user} />
 </TabsContent>
-
-
-
         <TabsContent value="checklist">
           <Card>
             <CardContent className="p-4 space-y-4">
@@ -367,8 +342,8 @@ useEffect(() => {
           </Card>
         </TabsContent>
       </Tabs>
-      </div>
-  </PullToRefresh>
-
-  );
+  </div>
+    
+  </div>
+);
 }
