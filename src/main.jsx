@@ -70,8 +70,10 @@ function AppWrapper() {
   const [isReset, setIsReset] = useState(false);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
-    if (url.hash.includes("access_token")) {
+    const hash = window.location.hash;
+    const type = hash.match(/type=([^&]+)/)?.[1];
+
+    if (type === "recovery") {
       setIsReset(true);
     }
 
@@ -91,6 +93,7 @@ function AppWrapper() {
   if (isReset) return <ResetPassword />;
   return session ? <SkincareApp session={session} /> : <Auth onLogin={setSession} />;
 }
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
