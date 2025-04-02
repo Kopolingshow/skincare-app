@@ -1,142 +1,182 @@
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/supabaseClient";
-import { DndContext } from "@dnd-kit/core";
-import { useSortable, SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { Button } from "@/components/ui/button";
+import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
+import { 
+  SortableContext, 
+  verticalListSortingStrategy, 
+  arrayMove,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
+// Компонент для перетаскиваемых элементов
+const SortableItem = ({ id, children, onRemove }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
-const daysOfWeek = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-];
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className="relative group flex items-center gap-2 p-3 bg-white rounded-lg shadow-sm border mb-2"
+    >
+      <button
+        {...listeners}
+        className="touch-none md:touch-auto"
+        aria-label="Перетащить"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-5 w-5 text-gray-400 hover:text-gray-600"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 6h16M4 12h16M4 18h16"
+          />
+        </svg>
+      </button>
+      
+      <div className="flex-1">{children}</div>
+      
+      <button
+        onClick={onRemove}
+        className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700"
+      >
+        ×
+      </button>
+    </div>
+  );
+};
 
-const ChecklistWizard = ({
-    user,
-    onComplete,
-    initialStep = 0,          // номер шага (например, понедельник-утро = 0)
-    singleDayMode = false,     // true — если редактируем только один день
-    isTrip = false             // true — если редактируем чек-лист для поездки
-  }) => {
+const daysOfWeek = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+export default function ChecklistWizard({ user, onComplete, initialStep = 0, singleDayMode = false, isTrip = false }) {
   const [products, setProducts] = useState([]);
-  const [step, setStep] = useState(0);
-  useEffect(() => {
-    if (singleDayMode) {
-      console.log("🛠 Режим редактирования одного дня:", initialStep);
-      setStep(initialStep);
-      setIsTripChecklist(isTrip);
-    }
-  }, [initialStep, singleDayMode, isTrip]);
   const [selectedProducts, setSelectedProducts] = useState({});
   const [orderedProducts, setOrderedProducts] = useState({});
   const [currentOrder, setCurrentOrder] = useState([]);
-  const [isTripChecklist, setIsTripChecklist] = useState(false);
+  const [isTripChecklist, setIsTripChecklist] = useState(isTrip);
+  const [step, setStep] = useState(initialStep);
   const [loaded, setLoaded] = useState(false);
+
   const currentDay = daysOfWeek[Math.floor(step / 2)];
   const currentType = step % 2 === 0 ? "morning" : "evening";
-  const [isSingleDayMode, setIsSingleDayMode] = useState(false);
-  const getDateFromWeekday = (weekday) => {
-    const daysOfWeek = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
-    const index = daysOfWeek.indexOf(weekday);
-    const today = new Date();
-    const currentDay = today.getDay() === 0 ? 6 : today.getDay() - 1;
-    const diff = index - currentDay;
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + diff);
-    return targetDate.toISOString().split("T")[0];
-  };
-  
+  const key = `${currentDay}_${currentType}_${isTripChecklist}`;
+
+  // Настройка сенсоров для мыши и тач-устройств
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    })
+  );
+
+  // Загрузка данных
   useEffect(() => {
     const fetchData = async () => {
       if (!user) return;
-  
+
+      // 1. Загружаем продукты
       const { data: productsData } = await supabase
-  .from("products")
-  .select("id, name")
-  .eq("user_id", user.id);
-  setProducts(productsData);
-  
+        .from("products")
+        .select("id, name")
+        .eq("user_id", user.id);
+      setProducts(productsData || []);
+
+      // 2. Загружаем чек-листы
       const { data: checklistData } = await supabase
         .from("checklists")
-        .select("day, type, product_ids, is_trip")
+        .select("day, type, product_ids, order, is_trip")
         .eq("user_id", user.id);
-  
-      if (checklistData && (Object.keys(selectedProducts).length === 0 || singleDayMode)) {
-        const initialSelected = {};
-        checklistData.forEach((item) => {
-          const key = `${item.day}_${item.type}_${item.is_trip}`;
-          initialSelected[key] = item.product_ids;
-        });
-        setSelectedProducts(initialSelected);
-      }
-      const initialOrdered = {};
-checklistData.forEach((item) => {
-  const key = `${item.day}_${item.type}_${item.is_trip}`;
-  const order = item.order || item.product_ids;
-  initialOrdered[key] = order;
 
-  if (key === `${currentDay}_${currentType}_${isTrip}`) {
-    setCurrentOrder(order);
-  }
-});
-setOrderedProducts(initialOrdered);
-  
-      if (singleDayMode) {
-        setStep(initialStep);
-        setIsTripChecklist(isTrip);
-        setIsSingleDayMode(true); // 🟢 сохраняем для дальнейшего использования
-        setLoaded(true);
-        return;
-      }
-  
+      // 3. Инициализируем состояние
+      const initialSelected = {};
+      const initialOrdered = {};
+
+      checklistData?.forEach((item) => {
+        const itemKey = `${item.day}_${item.type}_${item.is_trip}`;
+        initialSelected[itemKey] = item.product_ids || [];
+        initialOrdered[itemKey] = item.order || item.product_ids || [];
+      });
+
+      setSelectedProducts(initialSelected);
+      setOrderedProducts(initialOrdered);
+      setCurrentOrder(initialOrdered[key] || []);
       setLoaded(true);
     };
-  
+
     fetchData();
-  }, [user, singleDayMode, initialStep, isTrip]);
-  
-  
+  }, [user, key]);
 
+  // Переключение продукта
   const toggleProduct = (id) => {
-    const key = `${currentDay}_${currentType}_${isTripChecklist}`;
-    const existingSelected = selectedProducts[key] || [];
-    const existingOrder = orderedProducts[key] || [];
-  
-    let updatedSelected;
-    let updatedOrder;
-  
-    if (existingSelected.includes(id)) {
-      // Удаляем продукт
-      updatedSelected = existingSelected.filter(pid => pid !== id);
-      updatedOrder = existingOrder.filter(pid => pid !== id);
+    const currentSelected = selectedProducts[key] || [];
+    const currentOrdered = orderedProducts[key] || [];
+
+    let newSelected, newOrder;
+
+    if (currentSelected.includes(id)) {
+      newSelected = currentSelected.filter((pid) => pid !== id);
+      newOrder = currentOrdered.filter((pid) => pid !== id);
     } else {
-      // Добавляем продукт
-      updatedSelected = [...existingSelected, id];
-      updatedOrder = [...existingOrder, id]; // Всегда добавляем в конец списка
+      newSelected = [...currentSelected, id];
+      newOrder = [...currentOrdered, id];
     }
-  
-    setSelectedProducts(prev => ({ ...prev, [key]: updatedSelected }));
-    setOrderedProducts(prev => ({ ...prev, [key]: updatedOrder }));
-    setCurrentOrder(updatedOrder);
 
+    setSelectedProducts((prev) => ({ ...prev, [key]: newSelected }));
+    setOrderedProducts((prev) => ({ ...prev, [key]: newOrder }));
+    setCurrentOrder(newOrder);
   };
-  
-  
 
+  // Обработка перетаскивания
+  const handleDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    
+    setCurrentOrder((items) => {
+      const oldIndex = items.indexOf(active.id);
+      const newIndex = items.indexOf(over.id);
+      return arrayMove(items, oldIndex, newIndex);
+    });
+  };
+
+  // Сохранение порядка
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setOrderedProducts(prev => ({
+        ...prev,
+        [key]: currentOrder,
+      }));
+    }, 100);
+
+    return () => clearTimeout(timeout);
+  }, [currentOrder]);
+
+  // Сохранение шага
   const saveStep = async (exitAfterSave) => {
-    const key = `${currentDay}_${currentType}_${isTripChecklist}`;
     const productIds = selectedProducts[key] || [];
-const productOrder = (orderedProducts[key] || []).filter(id => productIds.includes(id));
+    const productOrder = currentOrder.filter(id => productIds.includes(id));
 
-  
-    const { error } = await supabase.from("checklists").upsert([
+    const { error } = await supabase.from("checklists").upsert(
       {
         user_id: user.id,
         day: currentDay,
@@ -144,181 +184,94 @@ const productOrder = (orderedProducts[key] || []).filter(id => productIds.includ
         product_ids: productIds,
         order: productOrder,
         is_trip: isTripChecklist,
-      }
-    ], { onConflict: ["user_id", "day", "type", "is_trip"] });
-  
-    if (error) {
-      console.error("❌ Ошибка при upsert checklists:", error.message);
-      return;
-    }
-  
-    const progressDate = getDateFromWeekday(currentDay);
-    const progressColumn = currentType === "morning" ? "morning_steps" : "evening_steps";
-  
-    const { error: progressError } = await supabase.from("progress").upsert({
-      user_id: user.id,
-      date: progressDate,
-      [progressColumn]: productIds.reduce((acc, id) => ({ ...acc, [id]: false }), {}),
-      trip_mode: isTripChecklist,
-    }, { onConflict: ["user_id", "date"] });
-  
-    if (progressError) {
-      console.error("❌ Ошибка при upsert progress:", progressError.message);
-    }
-  
-    if (exitAfterSave || isSingleDayMode || (step === 13 && isTripChecklist)) {
+      },
+      { onConflict: ["user_id", "day", "type", "is_trip"] }
+    );
+
+    if (!error && exitAfterSave) {
       onComplete();
-    } else if (step === 13 && !isTripChecklist) {
-      const confirmTrip = confirm("Создать чек-лист для поездки?");
-      if (confirmTrip) {
-        setStep(0);
-        setIsTripChecklist(true);
-        return;
-      } else {
-        onComplete();
-        return;
-      }
-    } else {
-      setStep(s => s + 1);
+    } else if (!error) {
+      setStep(step + 1);
     }
   };
-  
-  
-  
-  
-  
 
-  if (!loaded) return <p className="text-sm text-gray-500">Загрузка...</p>;
-
-  const key = `${currentDay}_${currentType}_${isTripChecklist}`;
-  const selected = selectedProducts[key] || [];
-  
-
-
-  function SortableProductItem({ product, checked, onToggle }) {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-    } = useSortable({ id: product.id });
-  
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    };
-  
-    return (
-      <div
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-        style={style}
-        className="flex items-center gap-2 p-2 border rounded-md bg-white shadow-sm cursor-grab"
-      >
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={() => onToggle(product.id)}
-          className="mr-2"
-        />
-        <span className="flex-1">{product.name}</span>
-        <span className="text-gray-400 text-sm">↕</span>
-      </div>
-    );
-  }
-  
-  
+  if (!loaded) return <p className="p-4 text-center">Загрузка...</p>;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900 capitalize">
-        {isTripChecklist ? "[Поездка] " : ""}
-        {currentDay}, {currentType === "morning" ? "утро" : "вечер"}
+    <div className="space-y-6 p-4">
+      <h2 className="text-xl font-semibold text-center capitalize">
+        {isTripChecklist ? "✈️ Поездка: " : ""}
+        {currentDay === "sunday" ? "Воскресенье" : 
+         currentDay === "saturday" ? "Суббота" : 
+         currentDay.charAt(0).toUpperCase() + currentDay.slice(1)}, 
+        {currentType === "morning" ? " утро" : " вечер"}
       </h2>
-      <DndContext
-  
-    onDragEnd={({ active, over }) => {
-        if (!over || active.id === over.id) return;
-      
-        const key = `${currentDay}_${currentType}_${isTripChecklist}`;
-        const oldIndex = currentOrder.indexOf(active.id);
-        const newIndex = currentOrder.indexOf(over.id);
-      
-        if (oldIndex !== -1 && newIndex !== -1) {
-          const newOrder = arrayMove(currentOrder, oldIndex, newIndex);
-          setCurrentOrder(newOrder);
-          setOrderedProducts(prev => ({ ...prev, [key]: newOrder }));
-        }
-      }}
->
-<div className="flex flex-col gap-4">
-  {/* Перетаскиваемые (выбранные) */}
-  <SortableContext items={currentOrder} strategy={verticalListSortingStrategy}>
-    <div className="flex flex-col gap-2">
-      {currentOrder.map((id) => {
-        const product = products.find((p) => p.id === id);
-        if (!product) return null;
 
-        return (
-          <SortableProductItem
-            key={product.id}
-            product={product}
-            checked={selected.includes(product.id)}
-            onToggle={() => toggleProduct(product.id)}
-          />
-        );
-      })}
-    </div>
-  </SortableContext>
-
-  {/* Невыбранные — без drag */}
-  <div className="flex flex-col gap-2 border-t pt-2 mt-2">
-    {products
-      .filter((p) => !selected.includes(p.id))
-      .map((product) => (
-        <div
-          key={product.id}
-          className="flex items-center gap-2 p-2 border rounded-md bg-gray-100 opacity-60"
+      <DndContext 
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext 
+          items={currentOrder} 
+          strategy={verticalListSortingStrategy}
         >
-          <input
-            type="checkbox"
-            checked={false}
-            onChange={() => toggleProduct(product.id)}
-            className="mr-2"
-          />
-          <span className="flex-1 text-gray-500">{product.name}</span>
-          <span className="text-gray-400 text-sm">—</span>
-        </div>
-      ))}
-  </div>
-</div>
+          <div className="mb-4">
+            {currentOrder.map((id) => {
+              const product = products.find(p => p.id === id);
+              if (!product) return null;
+              
+              return (
+                <SortableItem 
+                  key={product.id} 
+                  id={product.id}
+                  onRemove={() => toggleProduct(product.id)}
+                >
+                  <span className="text-gray-800">{product.name}</span>
+                </SortableItem>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
+      <div className="space-y-2">
+        <h3 className="font-medium text-gray-700">Доступные средства:</h3>
+        {products
+          .filter(p => !currentOrder.includes(p.id))
+          .map(p => (
+            <div
+              key={p.id}
+              className="p-3 bg-gray-50 rounded-lg border flex items-center gap-3 hover:bg-gray-100 transition-colors"
+            >
+              <button
+                onClick={() => toggleProduct(p.id)}
+                className="w-6 h-6 flex items-center justify-center bg-black text-white rounded-full hover:bg-gray-800"
+              >
+                +
+              </button>
+              <span className="text-gray-700">{p.name}</span>
+            </div>
+          ))}
+      </div>
 
-
-
-</DndContext>
-
-
-<div className="flex gap-2">
-  <Button
-    onClick={() => saveStep(true)}
-    variant="outline"
-    className="w-full rounded-xl"
-  >
-    Сохранить и выйти
-  </Button>
-  <Button
-    onClick={() => saveStep(false)}
-    className="w-full rounded-xl bg-black text-white hover:bg-gray-800"
-  >
-    Сохранить и далее
-  </Button>
-</div>
-
+      <div className="flex gap-2 pt-4">
+        <Button
+          onClick={() => saveStep(true)}
+          variant="outline"
+          className="flex-1"
+        >
+          Сохранить и выйти
+        </Button>
+        {!singleDayMode && (
+          <Button
+            onClick={() => saveStep(false)}
+            className="flex-1 bg-black hover:bg-gray-800"
+          >
+            Далее →
+          </Button>
+        )}
+      </div>
     </div>
   );
-};
-
-export default ChecklistWizard;
+}

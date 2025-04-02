@@ -10,7 +10,8 @@ import AnalyticsTab from "./AnalyticsTab";
 import ChecklistWizard from "./ChecklistWizard";
 import AvatarUploader from "./AvatarUploader";
 import EditProfileDialog from "./EditProfileDialog";
-import { MoreVertical } from "lucide-react";
+import { MoreVertical, RotateCcw } from "lucide-react";
+
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -92,6 +93,7 @@ const [allProducts, setAllProducts] = useState([]);
   const [eveningCompleted, setEveningCompleted] = useState(false);
   const [loadedMorningSteps, setLoadedMorningSteps] = useState(null);
   const [loadedEveningSteps, setLoadedEveningSteps] = useState(null);
+  const [isRotating, setIsRotating] = useState(false);
   const today = getTodayKey();
   const englishDays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const todayDayName = englishDays[new Date().getDay()];
@@ -344,25 +346,28 @@ useEffect(() => {
   
     
 
-  const toggleStep = async (time, step) => {
+  const toggleStep = async (time, stepId) => {
     const checklist = time === "morning" ? morningChecklist : eveningChecklist;
-    const newChecklist = { ...checklist, [step]: !checklist[step] };
+    const newValue = !checklist[stepId]; // Инвертируем значение чекбокса
+    const updatedChecklist = { ...checklist, [stepId]: newValue };
   
+    // Обновляем состояние
     if (time === "morning") {
-      setMorningChecklist(newChecklist);
+      setMorningChecklist(updatedChecklist);
     } else {
-      setEveningChecklist(newChecklist);
+      setEveningChecklist(updatedChecklist);
     }
   
-    await supabase.from("progress").upsert({
-      user_id: user.id,
-      date: getDateFromWeekdayIndex(selectedDayIndex),
-      morning_steps: time === "morning" ? newChecklist : morningChecklist,
-      evening_steps: time === "evening" ? newChecklist : eveningChecklist,
-      morning_done: morningCompleted,
-      evening_done: eveningCompleted,
-      trip_mode: tripMode,
-    }, { onConflict: ["user_id", "date"] });
+    // Сохраняем в Supabase
+    await supabase.from("progress").upsert(
+      {
+        user_id: user.id,
+        date: getDateFromWeekdayIndex(selectedDayIndex),
+        [`${time}_steps`]: updatedChecklist,
+        trip_mode: tripMode,
+      },
+      { onConflict: ["user_id", "date"] }
+    );
   };
   
   
@@ -412,15 +417,7 @@ useEffect(() => {
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
   <div className="max-w-md mx-auto px-6 py-6">
   <div className="flex justify-end mb-4">
-  <Button
-    variant="ghost"
-    size="icon"
-    className="rounded-full hover:bg-gray-100"
-    onClick={() => window.location.reload()}
-    title="Обновить данные"
-  >
-    <span className="text-xl">🔄</span>
-  </Button>
+ 
 </div>
 
       <h1 className="text-3xl font-bold text-center text-gray-900 mb-6 tracking-tight">
@@ -435,7 +432,24 @@ useEffect(() => {
     <span className="text-sm text-gray-500">Добро пожаловать,</span>
     <span className="text-lg font-semibold text-gray-900">{userName || "Гость"}</span>
   </div>
+  <Button
+  variant="ghost"
+  size="icon"
+  className={`ml-auto rounded-full hover:bg-gray-100 transition-transform ${
+    isRotating ? "animate-spin" : ""
+  }`}
+  onClick={() => {
+    setIsRotating(true);
+    setTimeout(() => setIsRotating(false), 1000); // сброс анимации через 1с
+    window.location.reload(); // или замени на свою логику, если нужно
+  }}
+  title="Обновить данные"
+>
+  <RotateCcw className="w-5 h-5" />
+</Button>
+
 </div>
+
 
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -575,27 +589,7 @@ useEffect(() => {
 
   </div>
 
-  <DropdownMenu>
-    <DropdownMenuTrigger asChild>
-      <Button variant="ghost" size="icon" className="rounded-full hover:bg-gray-100">
-        <span className="text-xl">⋯</span>
-      </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end">
-      <DropdownMenuItem onClick={() => setChecklistSetupOpen(true)}>
-        🛠 Создать чек-лист
-      </DropdownMenuItem>
-      <DropdownMenuItem onClick={editFullChecklist}>
-        ✏️ Редактировать все
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        className="text-red-500"
-        onClick={deleteAllChecklists}
-      >
-        ❌ Удалить все
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+  
 </div>
 
 
@@ -697,7 +691,7 @@ useEffect(() => {
       </Tabs>
   </div>
   <Dialog open={checklistSetupOpen} onOpenChange={setChecklistSetupOpen}>
-  <DialogContent className="max-w-lg rounded-2xl">
+  <DialogContent className="max-w-lg rounded-2xl overflow-y-auto max-h-[80vh]">
     <DialogTitle className="text-xl font-semibold text-gray-900">Настройка чек-листа</DialogTitle>
     <ChecklistWizard
   user={user}

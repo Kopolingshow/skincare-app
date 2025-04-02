@@ -76,3 +76,6 @@ html, body, #root {
 body {
   min-height: 100vh;
 }
+html, body {
+  background-color: white !important;
+}
