@@ -19,7 +19,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
-
+const convertArrayToChecklistObject = (array) => {
+  return array.reduce((acc, id) => ({ ...acc, [id]: false }), {});
+};
 
 
 
@@ -83,6 +85,8 @@ useEffect(() => {
 }, [user]);
 const [morningChecklist, setMorningChecklist] = useState([]);
 const [eveningChecklist, setEveningChecklist] = useState([]);
+const [morningOrder, setMorningOrder] = useState([]);
+const [eveningOrder, setEveningOrder] = useState([]);
 const [allProducts, setAllProducts] = useState([]);
   const [morningCompleted, setMorningCompleted] = useState(false);
   const [eveningCompleted, setEveningCompleted] = useState(false);
@@ -97,20 +101,29 @@ const [selectedDayIndex, setSelectedDayIndex] = useState(
 );
 const selectedDayName = daysOfWeek[selectedDayIndex];
 
-const changeDay = (offset) => {
+const changeDay = async (offset) => {
   const newIndex = selectedDayIndex + offset;
   if (newIndex >= 0 && newIndex <= 6) {
     setSelectedDayIndex(newIndex);
+    await fetchChecklist(daysOfWeek[newIndex]); // сразу загружаем чек-листы
   }
 };
 
 
-const fetchChecklist = async () => {
+const fetchChecklist = async (dayNameOverride = null) => {
+  const dayToUse = dayNameOverride || selectedDayName;
+
+  // Обновляем выбранный день, если передан dayNameOverride
+  if (dayNameOverride) {
+    const index = daysOfWeek.findIndex((d) => d === dayNameOverride);
+    if (index !== -1) setSelectedDayIndex(index);
+  }
+
   const { data, error } = await supabase
     .from("checklists")
-    .select("id, day, type, product_ids")
+    .select("id, day, type, product_ids, order")
     .eq("user_id", user.id)
-    .eq("day", selectedDayName)
+    .eq("day", dayToUse)
     .eq("is_trip", tripMode);
 
   if (error) {
@@ -120,118 +133,146 @@ const fetchChecklist = async () => {
 
   const morning = data.find((item) => item.type === "morning");
   const evening = data.find((item) => item.type === "evening");
+  setMorningOrder(morning?.order || []);
+setEveningOrder(evening?.order || []);
 
-  setMorningChecklist(
-    morning?.product_ids
-      ? convertArrayToChecklistObject(morning.product_ids.map((id) => parseInt(id)))
-      : {}
-  );
+setMorningChecklist(
+  morning?.product_ids
+    ? convertArrayToChecklistObject(morning.product_ids)
+    : {}
+);
 
-  setEveningChecklist(
-    evening?.product_ids
-      ? convertArrayToChecklistObject(evening.product_ids.map((id) => parseInt(id)))
-      : {}
-  );
+setEveningChecklist(
+  evening?.product_ids
+    ? convertArrayToChecklistObject(evening.product_ids)
+    : {}
+);
+
+
 };
 
+const ensureWeeklyChecklist = async () => {
+  if (!user) return false;
+
+  const { data: existingChecklists, error: fetchError } = await supabase
+    .from("checklists")
+    .select("day, type, is_trip, product_ids")
+    .eq("user_id", user.id);
+
+  if (fetchError) {
+    console.error("❌ Ошибка при загрузке чек-листов:", fetchError.message);
+    return false;
+  }
+
+  const requiredDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const requiredTypes = ["morning", "evening"];
+  const missing = [];
+
+  for (const day of requiredDays) {
+    for (const type of requiredTypes) {
+      const exists = existingChecklists.some(
+        (c) =>
+          c.day === day &&
+          c.type === type &&
+          c.is_trip === tripMode &&
+          Array.isArray(c.product_ids) &&
+          c.product_ids.length > 0
+      );
+      if (!exists) {
+        missing.push({ day, type });
+      }
+    }
+  }
+
+  if (missing.length === 0) {
+    console.log("✅ Неделя уже заполнена полностью");
+    return false;
+  }
+
+  const { data: previous, error: prevError } = await supabase
+    .from("checklists")
+    .select("type, product_ids, order")
+    .eq("user_id", user.id)
+    .eq("is_trip", tripMode)
+    .order("id", { ascending: false })
+    .limit(100);
+
+  if (prevError || !previous || previous.length === 0) {
+    console.warn("🔁 Нет шаблонов для автозаполнения");
+    return false;
+  }
+
+  const sourceMorning = previous.find((item) => item.type === "morning");
+  const sourceEvening = previous.find((item) => item.type === "evening");
+
+  if (!sourceMorning || !sourceEvening) {
+    console.warn("⚠️ Не хватает шаблонов для утреннего и вечернего ухода");
+    return false;
+  }
+
+  const inserts = [];
+
+  for (const { day, type } of missing) {
+    const source = type === "morning" ? sourceMorning : sourceEvening;
+
+    inserts.push({
+      user_id: user.id,
+      day,
+      type,
+      is_trip: tripMode,
+      product_ids: source.product_ids.map((id) => parseInt(id)),
+      order: source.order || [],
+    });
+  }
+
+  const { error: insertError } = await supabase
+    .from("checklists")
+    .upsert(inserts, {
+      onConflict: ["user_id", "day", "type", "is_trip"],
+    });
+
+  if (insertError) {
+    console.error("❌ Ошибка при автозаполнении:", insertError.message);
+    return false;
+  } else {
+    console.log("📋 Автоматически создан чек-лист на пропущенные дни:", missing);
+    return true;
+  }
+};
 useEffect(() => {
-  const ensureWeeklyChecklist = async () => {
+  const ensureWeeklyChecklistAndLoad = async () => {
     if (!user) return;
-  
-    const { data: currentWeek, error: currentError } = await supabase
-      .from("checklists")
-      .select("day, type")
-      .eq("user_id", user.id)
-      .eq("is_trip", tripMode);
-  
-    if (currentError) {
-      console.error("❌ Ошибка при проверке текущих чек-листов:", currentError.message);
-      return;
-    }
-  
-    // Шаг 1: Проверяем полноту недели
-    const daysWithTypes = currentWeek.reduce((acc, item) => {
-      acc[item.day] = acc[item.day] || new Set();
-      acc[item.day].add(item.type);
-      return acc;
-    }, {});
-  
-    const hasChecklistForFullWeek = daysOfWeek.every(day =>
-      daysWithTypes[day] &&
-      daysWithTypes[day].has("morning") &&
-      daysWithTypes[day].has("evening")
-    );
-  
-    if (hasChecklistForFullWeek) {
-      console.log("✅ Неделя уже заполнена полностью");
-      return;
-    }
-  
-    // Шаг 2: Берём шаблоны из предыдущих записей
-    const { data: previous, error: prevError } = await supabase
-      .from("checklists")
-      .select("type, product_ids, order")
-      .eq("user_id", user.id)
-      .eq("is_trip", tripMode)
-      .order("id", { ascending: false })
-      .limit(100);
-  
-    if (prevError || !previous || previous.length === 0) {
-      console.warn("🔁 Нет шаблонов для автозаполнения");
-      return;
-    }
-  
-    const sourceMorning = previous.find((item) => item.type === "morning");
-    const sourceEvening = previous.find((item) => item.type === "evening");
-  
-    if (!sourceMorning || !sourceEvening) {
-      console.warn("⚠️ Не хватает шаблонов для утреннего и вечернего ухода");
-      return;
-    }
-  
-    const inserts = [];
-  
-    for (const day of daysOfWeek) {
-      inserts.push({
-        user_id: user.id,
-        day,
-        type: "morning",
-        is_trip: tripMode,
-        product_ids: sourceMorning.product_ids.map(id => parseInt(id)),
-        order: sourceMorning.order || [],
-      });
-      inserts.push({
-        user_id: user.id,
-        day,
-        type: "evening",
-        is_trip: tripMode,
-        product_ids: sourceEvening.product_ids.map(id => parseInt(id)),
-        order: sourceEvening.order || [],
-      });
-    }
-  
-    const { error: insertError } = await supabase
-      .from("checklists")
-      .insert(inserts);
-  
-    if (insertError) {
-      console.error("❌ Ошибка при автозаполнении:", insertError.message);
-    } else {
-      console.log("📋 Автоматически создан чек-лист на всю неделю");
+
+    const inserted = await ensureWeeklyChecklist(); // вернёт true, если были вставки
+    await fetchChecklist(); // всегда обновляем
+
+    if (inserted) {
+      console.log("🔄 Обновлены данные после автозаполнения");
     }
   };
-  
-  
-  const loadChecklist = async () => {
-    await ensureWeeklyChecklist(); // автозаполнение недели
-    await fetchChecklist();        // загрузка текущего дня
-  };
 
-  loadChecklist();
-}, [user, selectedDayName, tripMode]);
+  ensureWeeklyChecklistAndLoad();
+}, [user, selectedDayIndex, tripMode]);
 
   
-
+  
+  
+  
+  
+  useEffect(() => {
+    const ensureWeeklyChecklistAndLoad = async () => {
+      if (!user) return;
+  
+      const inserted = await ensureWeeklyChecklist(); // вернём true, если были вставки
+      await fetchChecklist(); // всегда обновляем
+  
+      if (inserted) {
+        console.log("🔄 Обновлены данные после автозаполнения");
+      }
+    };
+  
+    ensureWeeklyChecklistAndLoad();
+  }, [user, selectedDayIndex, tripMode]);
 
   useEffect(() => {
     const loadAllProducts = async () => {
@@ -258,53 +299,72 @@ useEffect(() => {
   const [editProfileOpen, setEditProfileOpen] = useState(false);
 
   const resolvedMorningSteps = useMemo(() => {
-    return allProducts.filter(p => morningChecklist[parseInt(p.id)])
-    ;
-  }, [allProducts, morningChecklist]);
+    return morningOrder
+      .map((id) => allProducts.find((p) => p.id === id))
+      .filter(Boolean);
+  }, [allProducts, morningOrder]);
   
   const resolvedEveningSteps = useMemo(() => {
-    return allProducts.filter(p => eveningChecklist[parseInt(p.id)]);
-  }, [allProducts, eveningChecklist]);
+    return eveningOrder
+      .map((id) => allProducts.find((p) => p.id === id))
+      .filter(Boolean);
+  }, [allProducts, eveningOrder]);
+  
+  
+  
   
   useEffect(() => {
     const loadProgress = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("progress")
         .select("*")
         .eq("user_id", user.id)
-        .eq("date", today)
+        .eq("date", getDateFromWeekdayIndex(selectedDayIndex))
         .single();
-
+  
       if (data) {
-        setTripMode(!!data.trip_mode); // применяем сразу
-        setLoadedMorningSteps(data.morning_steps || {});
-        setLoadedEveningSteps(data.evening_steps || {});
+        setTripMode(!!data.trip_mode);
+        setMorningChecklist(data.morning_steps || {});
+        setEveningChecklist(data.evening_steps || {});
         setMorningCompleted(!!data.morning_done);
         setEveningCompleted(!!data.evening_done);
+      } else {
+        setMorningChecklist({});
+        setEveningChecklist({});
+        setMorningCompleted(false);
+        setEveningCompleted(false);
       }
       setIsLoading(false);
     };
-
+  
     if (user) loadProgress();
-  }, [user, today]);
+  }, [user, selectedDayIndex, tripMode]);
+  
 
   
     
 
-  const toggleStep = (time, step) => {
+  const toggleStep = async (time, step) => {
+    const checklist = time === "morning" ? morningChecklist : eveningChecklist;
+    const newChecklist = { ...checklist, [step]: !checklist[step] };
+  
     if (time === "morning") {
-      setMorningChecklist((prev) => ({ ...prev, [step]: !prev[step] }));
+      setMorningChecklist(newChecklist);
     } else {
-      setEveningChecklist((prev) => ({ ...prev, [step]: !prev[step] }));
+      setEveningChecklist(newChecklist);
     }
+  
+    await supabase.from("progress").upsert({
+      user_id: user.id,
+      date: getDateFromWeekdayIndex(selectedDayIndex),
+      morning_steps: time === "morning" ? newChecklist : morningChecklist,
+      evening_steps: time === "evening" ? newChecklist : eveningChecklist,
+      morning_done: morningCompleted,
+      evening_done: eveningCompleted,
+      trip_mode: tripMode,
+    }, { onConflict: ["user_id", "date"] });
   };
-  const convertArrayToChecklistObject = (array) => {
-    const result = {};
-    array.forEach((id) => {
-      result[id] = true;
-    });
-    return result;
-  };
+  
   
 
   if (!user) return <div>Загрузка...</div>;
@@ -641,11 +701,18 @@ useEffect(() => {
     <DialogTitle className="text-xl font-semibold text-gray-900">Настройка чек-листа</DialogTitle>
     <ChecklistWizard
   user={user}
-  onComplete={() => setChecklistSetupOpen(false)}
-  {...checklistWizardProps}
+  initialStep={checklistWizardProps.initialStep}
+  singleDayMode={checklistWizardProps.singleDayMode}
+  isTrip={checklistWizardProps.isTrip}
+  onComplete={async () => {
+    setChecklistSetupOpen(false);
+    await fetchChecklist(daysOfWeek[Math.floor(checklistWizardProps.initialStep / 2)]);
+  }}
 />
+
+
   </DialogContent>
 </Dialog>
-  </div>
-);
-}
+</div>
+    );
+};
